@@ -197,8 +197,11 @@ jalv_apply_preset(Jalv* jalv, const LilvNode* preset)
 {
   lilv_state_free(jalv->preset);
   jalv->preset = lilv_state_new_from_world(jalv->world, &jalv->map, preset);
-  jalv_apply_state(jalv, jalv->preset);
-  return 0;
+  if (jalv->preset) {
+    jalv_apply_state(jalv, jalv->preset);
+    return 1;  // Success
+  }
+  return 0;  // Failure - preset not found
 }
 
 int

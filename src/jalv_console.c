@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 static int
 print_usage(const char* name, bool error)
@@ -190,6 +191,68 @@ jalv_print_preset(Jalv*           ZIX_UNUSED(jalv),
   return 0;
 }
 
+// Helper: Print contents of a file to stderr
+static void
+print_file_to_stderr(const char* filename)
+{
+  FILE* f = fopen(filename, "r");
+  if (f) {
+    char buffer[4096];
+    size_t nread;
+    while ((nread = fread(buffer, 1, sizeof(buffer), f)) > 0) {
+      fwrite(buffer, 1, nread, stderr);
+    }
+    fclose(f);
+  }
+}
+
+// Helper: Create temporary directory, save state, and optionally print/copy it
+static char*
+save_state_to_temp_dir(Jalv* jalv)
+{
+  char* temp_dir = malloc(256);
+  if (!temp_dir) {
+    return NULL;
+  }
+
+  snprintf(temp_dir, 256, "/tmp/jalv_state_XXXXXX");
+  if (!mkdtemp(temp_dir)) {
+    free(temp_dir);
+    return NULL;
+  }
+
+  jalv_save(jalv, temp_dir);
+  return temp_dir;
+}
+
+// Helper: Clean up temporary state directory
+static void
+cleanup_temp_state_dir(char* temp_dir)
+{
+  if (temp_dir) {
+    char state_file[2048];
+    snprintf(state_file, sizeof(state_file), "%s/state.ttl", temp_dir);
+    unlink(state_file);
+    rmdir(temp_dir);
+    free(temp_dir);
+  }
+}
+
+// Helper: Split a file path into directory and filename
+static void
+split_path(const char* path, char* dir, size_t dir_size, char* name, size_t name_size)
+{
+  const char* last_slash = strrchr(path, '/');
+  if (last_slash) {
+    size_t dir_len = last_slash - path;
+    snprintf(dir, dir_size, "%.*s", (int)dir_len, path);
+    snprintf(name, name_size, "%s", last_slash + 1);
+  } else {
+    snprintf(dir, dir_size, ".");
+    snprintf(name, name_size, "%s", path);
+  }
+}
+
 static void
 jalv_process_command(Jalv* jalv, const char* cmd)
 {
@@ -204,6 +267,9 @@ jalv_process_command(Jalv* jalv, const char* cmd)
             "  monitors          Print output control values\n"
             "  presets           Print available presets\n"
             "  preset URI        Set preset\n"
+            "  print state       Print current state as Turtle RDF\n"
+            "  load FILENAME     Load state from file or directory\n"
+            "  save FILENAME     Save current state to file\n"
             "  set INDEX VALUE   Set control value by port index\n"
             "  set SYMBOL VALUE  Set control value by symbol\n"
             "  SYMBOL = VALUE    Set control value by symbol\n");
@@ -211,11 +277,90 @@ jalv_process_command(Jalv* jalv, const char* cmd)
     jalv_unload_presets(jalv);
     jalv_load_presets(jalv, jalv_print_preset, NULL);
   } else if (sscanf(cmd, "preset %1023[a-zA-Z0-9_:/-.#]\n", sym) == 1) {
-    LilvNode* preset = lilv_new_uri(jalv->world, sym);
-    lilv_world_load_resource(jalv->world, preset);
-    jalv_apply_preset(jalv, preset);
-    lilv_node_free(preset);
-    jalv_print_controls(jalv, true, false);
+    // Validate that the string contains a URI scheme (e.g., "http://", "file://")
+    if (!strchr(sym, ':')) {
+      fprintf(stderr, "error: invalid preset URI `%s' (must contain a scheme, e.g., `http://...')\n", sym);
+    } else {
+      LilvNode* preset = lilv_new_uri(jalv->world, sym);
+      lilv_world_load_resource(jalv->world, preset);
+      if (jalv_apply_preset(jalv, preset)) {
+        fprintf(stderr, "Preset loaded: %s\n", sym);
+        jalv_print_controls(jalv, true, false);
+      } else {
+        fprintf(stderr, "Failed to load preset: %s\n", sym);
+      }
+      lilv_node_free(preset);
+    }
+  } else if (strcmp(cmd, "print state\n") == 0) {
+    char* temp_dir = save_state_to_temp_dir(jalv);
+    if (temp_dir) {
+      char state_file[2048];
+      snprintf(state_file, sizeof(state_file), "%s/state.ttl", temp_dir);
+      print_file_to_stderr(state_file);
+      cleanup_temp_state_dir(temp_dir);
+    } else {
+      fprintf(stderr, "error: failed to create temporary directory\n");
+    }
+  } else if (sscanf(cmd, "load %1023[^\n]\n", sym) == 1) {
+    // Validate filename is not empty
+    if (sym[0] == '\0') {
+      fprintf(stderr, "error: filename cannot be empty\n");
+    } else {
+      struct stat info;
+      LilvState* state = NULL;
+      char* state_file = NULL;
+
+      // Check if path exists
+      if (stat(sym, &info) != 0) {
+        fprintf(stderr, "error: file or directory `%s' not found\n", sym);
+      } else if ((info.st_mode & S_IFMT) == S_IFDIR) {
+        // If it's a directory, look for state.ttl inside
+        state_file = jalv_strjoin(sym, "/state.ttl");
+        state = lilv_state_new_from_file(jalv->world, &jalv->map, NULL, state_file);
+      } else {
+        // If it's a file, load it directly
+        state = lilv_state_new_from_file(jalv->world, &jalv->map, NULL, sym);
+      }
+
+      if (!state) {
+        fprintf(stderr, "error: failed to load state from `%s'\n", sym);
+      } else {
+        jalv_apply_state(jalv, state);
+        fprintf(stderr, "State loaded from: %s\n", sym);
+        jalv_print_controls(jalv, true, false);
+        lilv_state_free(state);
+      }
+
+      if (state_file) {
+        free(state_file);
+      }
+    }
+  } else if (sscanf(cmd, "save %1023[^\n]\n", sym) == 1) {
+    if (sym[0] == '\0') {
+      fprintf(stderr, "error: filename cannot be empty\n");
+    } else {
+      char save_dir[2048];
+      char target_name[1024];
+      split_path(sym, save_dir, sizeof(save_dir), target_name, sizeof(target_name));
+
+      jalv_save(jalv, save_dir);
+
+      // Rename if needed (jalv_save always creates state.ttl)
+      bool success = true;
+      if (strcmp(target_name, "state.ttl") != 0) {
+        char src_path[2048];
+        char dest_path[2048];
+        snprintf(src_path, sizeof(src_path), "%s/state.ttl", save_dir);
+        snprintf(dest_path, sizeof(dest_path), "%s/%s", save_dir, target_name);
+        success = (rename(src_path, dest_path) == 0);
+      }
+
+      if (success) {
+        fprintf(stderr, "State saved to: %s\n", sym);
+      } else {
+        fprintf(stderr, "error: failed to save state to `%s'\n", sym);
+      }
+    }
   } else if (strcmp(cmd, "controls\n") == 0) {
     jalv_print_controls(jalv, true, false);
   } else if (strcmp(cmd, "monitors\n") == 0) {
