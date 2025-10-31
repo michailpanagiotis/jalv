@@ -26,36 +26,6 @@ int
 jalv_frontend_init(int* argc, char*** argv, JalvOptions* opts);
 
 /**
-   Return the URI of the "native" LV2 UI type for this frontend.
-*/
-const char*
-jalv_frontend_ui_type(void);
-
-/**
-   Discover if an interactive frontend is available.
-*/
-bool
-jalv_frontend_discover(Jalv* jalv);
-
-/**
-   Return the ideal refresh rate of the frontend in Hz.
-*/
-float
-jalv_frontend_refresh_rate(Jalv* jalv);
-
-/**
-   Return the scale factor of the frontend.
-*/
-float
-jalv_frontend_scale_factor(Jalv* jalv);
-
-/**
-   Attempt to get a plugin URI selection from the user.
-*/
-LilvNode*
-jalv_frontend_select_plugin(Jalv* jalv);
-
-/**
    Open and run the frontend interface.
 */
 int

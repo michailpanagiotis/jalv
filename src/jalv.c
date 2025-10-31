@@ -764,8 +764,6 @@ setup_signals(Jalv* const jalv)
 static const LilvUI*
 jalv_select_custom_ui(const Jalv* const jalv)
 {
-  const char* const native_ui_type_uri = jalv_frontend_ui_type();
-
   if (jalv->opts.ui_uri) {
     // Specific UI explicitly requested by user
     LilvNode*     uri = lilv_new_uri(jalv->world, jalv->opts.ui_uri);
@@ -775,7 +773,7 @@ jalv_select_custom_ui(const Jalv* const jalv)
     return ui;
   }
 
-  if (!native_ui_type_uri && jalv->opts.show_ui) {
+  if (jalv->opts.show_ui) {
     // Try to find a UI with ui:showInterface
     LILV_FOREACH (uis, u, jalv->uis) {
       const LilvUI*   ui      = lilv_uis_get(jalv->uis, u);
@@ -999,8 +997,8 @@ static void
 jalv_init_display(Jalv* const jalv)
 {
   if (!jalv->opts.update_rate) {
-    // Calculate a reasonable UI update frequency
-    jalv->ui_update_hz = jalv_frontend_refresh_rate(jalv);
+    // CLI default update frequency
+    jalv->ui_update_hz = 30.0f;
   } else {
     // Use user-specified UI update rate
     jalv->ui_update_hz = jalv->opts.update_rate;
@@ -1008,8 +1006,8 @@ jalv_init_display(Jalv* const jalv)
   }
 
   if (!jalv->opts.scale_factor) {
-    // Calculate the monitor's scale factor
-    jalv->ui_scale_factor = jalv_frontend_scale_factor(jalv);
+    // CLI default scale factor (no DPI scaling)
+    jalv->ui_scale_factor = 1.0f;
   } else {
     // Use user-specified UI scale factor
     jalv->ui_scale_factor = jalv->opts.scale_factor;
@@ -1091,10 +1089,6 @@ jalv_open(Jalv* const jalv, int* argc, char*** argv)
     plugin_uri = lilv_node_duplicate(lilv_state_get_plugin_uri(state));
   } else if (*argc > 1) {
     plugin_uri = lilv_new_uri(world, (*argv)[*argc - 1]);
-  }
-
-  if (!plugin_uri) {
-    plugin_uri = jalv_frontend_select_plugin(jalv);
   }
 
   if (!plugin_uri) {
@@ -1289,8 +1283,8 @@ jalv_open(Jalv* const jalv, int* argc, char*** argv)
   // Activate plugin
   lilv_instance_activate(jalv->instance);
 
-  // Discover UI
-  jalv->has_ui = jalv_frontend_discover(jalv);
+  // Discover UI (CLI: show_ui flag)
+  jalv->has_ui = jalv->opts.show_ui;
 
   // Activate audio backend
   jalv_backend_activate(jalv);

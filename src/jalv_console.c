@@ -143,12 +143,6 @@ jalv_frontend_init(int* argc, char*** argv, JalvOptions* opts)
   return 0;
 }
 
-const char*
-jalv_frontend_ui_type(void)
-{
-  return NULL;
-}
-
 static void
 jalv_print_controls(Jalv* jalv, bool writable, bool readable)
 {
@@ -380,37 +374,12 @@ jalv_process_command(Jalv* jalv, const char* cmd)
   }
 }
 
-bool
-jalv_frontend_discover(Jalv* jalv)
-{
-  return jalv->opts.show_ui;
-}
-
 static bool
 jalv_run_custom_ui(Jalv* jalv)
 {
   (void)jalv;
 
   return false;
-}
-
-float
-jalv_frontend_refresh_rate(Jalv* ZIX_UNUSED(jalv))
-{
-  return 30.0f;
-}
-
-float
-jalv_frontend_scale_factor(Jalv* ZIX_UNUSED(jalv))
-{
-  return 1.0f;
-}
-
-LilvNode*
-jalv_frontend_select_plugin(Jalv* jalv)
-{
-  (void)jalv;
-  return NULL;
 }
 
 int
