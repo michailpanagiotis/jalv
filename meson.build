@@ -186,21 +186,7 @@ common_dependencies = [
   thread_dep,
 ]
 
-# Internal JACK client library
-if jack_dep.found()
-  shared_library(
-    'jalv',
-    sources + files('src/jalv_console.c'),
-    c_args: c_suppressions + platform_defines,
-    dependencies: common_dependencies,
-    include_directories: include_directories('src'),
-    install: true,
-    install_dir: get_option('prefix') / get_option('libdir') / 'jack',
-    name_prefix: '',
-  )
-endif
-
-# Console version
+# CLI executable
 executable(
   'jalv',
   sources + files('src/jalv_console.c'),
