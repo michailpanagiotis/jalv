@@ -20,10 +20,6 @@
 
 #include "lilv/lilv.h"
 #include "serd/serd.h"
-#include "sratom/sratom.h"
-#if USE_SUIL
-#  include "suil/suil.h"
-#endif
 
 #include "lv2/atom/forge.h"
 #include "lv2/core/lv2.h"
@@ -70,8 +66,6 @@ struct JalvImpl {
   LV2_URID_Map      map;          ///< URI => Int map
   LV2_URID_Unmap    unmap;        ///< Int => URI map
   SerdEnv*          env;          ///< Environment for RDF printing
-  Sratom*           sratom;       ///< Atom serialiser
-  Sratom*           ui_sratom;    ///< Atom serialiser for UI thread
   Symap*            symap;        ///< URI map
   ZixSem            symap_lock;   ///< Lock for URI map
   JalvBackend*      backend;      ///< Audio system backend
@@ -92,11 +86,6 @@ struct JalvImpl {
   const LilvUI*     ui;           ///< Plugin UI (RDF data)
   const LilvNode*   ui_type;      ///< Plugin UI type (unwrapped)
   LilvInstance*     instance;     ///< Plugin instance (shared library)
-#if USE_SUIL
-  SuilHost*     ui_host;     ///< Plugin UI host support
-  SuilInstance* ui_instance; ///< Plugin UI instance (shared library)
-#endif
-  void*               window;          ///< Window (if applicable)
   struct Port*        ports;           ///< Port array of size num_ports
   Controls            controls;        ///< Available plugin controls
   uint32_t            block_length;    ///< Audio buffer size (block length)

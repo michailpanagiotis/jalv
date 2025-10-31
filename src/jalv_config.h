@@ -87,17 +87,6 @@
 #    endif
 #  endif
 
-// Suil
-#  ifndef HAVE_SUIL
-#    ifdef __has_include
-#      if __has_include("suil/suil.h")
-#        define HAVE_SUIL 1
-#      else
-#        define HAVE_SUIL 0
-#      endif
-#    endif
-#  endif
-
 // JACK metadata API
 #  ifndef HAVE_JACK_METADATA
 #    ifdef __has_include
@@ -158,12 +147,6 @@
 #  define USE_SIGACTION 1
 #else
 #  define USE_SIGACTION 0
-#endif
-
-#if HAVE_SUIL
-#  define USE_SUIL 1
-#else
-#  define USE_SUIL 0
 #endif
 
 #if HAVE_JACK_METADATA

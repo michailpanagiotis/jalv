@@ -39,15 +39,10 @@
 #include "lv2/urid/urid.h"
 #include "lv2/worker/worker.h"
 #include "serd/serd.h"
-#include "sratom/sratom.h"
 #include "symap.h"
 #include "zix/common.h"
 #include "zix/ring.h"
 #include "zix/sem.h"
-
-#if USE_SUIL
-#  include "suil/suil.h"
-#endif
 
 #if defined(_WIN32)
 #  include <io.h> // for _mktemp
@@ -410,64 +405,12 @@ jalv_set_control(Jalv*            jalv,
   }
 }
 
-#if USE_SUIL
-static uint32_t
-jalv_ui_port_index(void* const controller, const char* symbol)
-{
-  Jalv* const  jalv = (Jalv*)controller;
-  struct Port* port = jalv_port_by_symbol(jalv, symbol);
-
-  return port ? port->index : LV2UI_INVALID_PORT_INDEX;
-}
-#endif
-
 void
 jalv_ui_instantiate(Jalv* jalv, const char* native_ui_type, void* parent)
 {
-#if USE_SUIL
-  jalv->ui_host =
-    suil_host_new(jalv_send_to_plugin, jalv_ui_port_index, NULL, NULL);
-
-  const LV2_Feature parent_feature = {LV2_UI__parent, parent};
-
-  const LV2_Feature instance_feature = {
-    LV2_INSTANCE_ACCESS_URI, lilv_instance_get_handle(jalv->instance)};
-
-  const LV2_Feature data_feature = {LV2_DATA_ACCESS_URI,
-                                    &jalv->features.ext_data};
-
-  const LV2_Feature idle_feature = {LV2_UI__idleInterface, NULL};
-
-  const LV2_Feature* ui_features[] = {&jalv->features.map_feature,
-                                      &jalv->features.unmap_feature,
-                                      &instance_feature,
-                                      &data_feature,
-                                      &jalv->features.log_feature,
-                                      &parent_feature,
-                                      &jalv->features.options_feature,
-                                      &idle_feature,
-                                      &jalv->features.request_value_feature,
-                                      NULL};
-
-  const char* bundle_uri  = lilv_node_as_uri(lilv_ui_get_bundle_uri(jalv->ui));
-  const char* binary_uri  = lilv_node_as_uri(lilv_ui_get_binary_uri(jalv->ui));
-  char*       bundle_path = lilv_file_uri_parse(bundle_uri, NULL);
-  char*       binary_path = lilv_file_uri_parse(binary_uri, NULL);
-
-  jalv->ui_instance =
-    suil_instance_new(jalv->ui_host,
-                      jalv,
-                      native_ui_type,
-                      lilv_node_as_uri(lilv_plugin_get_uri(jalv->plugin)),
-                      lilv_node_as_uri(lilv_ui_get_uri(jalv->ui)),
-                      lilv_node_as_uri(jalv->ui_type),
-                      bundle_path,
-                      binary_path,
-                      ui_features);
-
-  lilv_free(binary_path);
-  lilv_free(bundle_path);
-#endif
+  (void)jalv;
+  (void)native_ui_type;
+  (void)parent;
 }
 
 bool
@@ -692,21 +635,11 @@ jalv_dump_atom(Jalv* const           jalv,
                const LV2_Atom* const atom,
                const int             color)
 {
-  if (jalv->opts.dump) {
-    char* const str = sratom_to_turtle(jalv->sratom,
-                                       &jalv->unmap,
-                                       "jalv:",
-                                       NULL,
-                                       NULL,
-                                       atom->type,
-                                       atom->size,
-                                       LV2_ATOM_BODY_CONST(atom));
-
-    jalv_ansi_start(stream, color);
-    fprintf(stream, "\n# %s (%u bytes):\n%s\n", label, atom->size, str);
-    jalv_ansi_reset(stream);
-    free(str);
-  }
+  (void)jalv;
+  (void)stream;
+  (void)label;
+  (void)atom;
+  (void)color;
 }
 
 bool
@@ -841,27 +774,6 @@ jalv_select_custom_ui(const Jalv* const jalv)
     lilv_node_free(uri);
     return ui;
   }
-
-#if USE_SUIL
-  if (native_ui_type_uri) {
-    // Try to find an embeddable UI
-    LilvNode* native_type = lilv_new_uri(jalv->world, native_ui_type_uri);
-
-    LILV_FOREACH (uis, u, jalv->uis) {
-      const LilvUI*   ui   = lilv_uis_get(jalv->uis, u);
-      const LilvNode* type = NULL;
-      const bool      supported =
-        lilv_ui_is_supported(ui, suil_ui_supported, native_type, &type);
-
-      if (supported) {
-        lilv_node_free(native_type);
-        return ui;
-      }
-    }
-
-    lilv_node_free(native_type);
-  }
-#endif
 
   if (!native_ui_type_uri && jalv->opts.show_ui) {
     // Try to find a UI with ui:showInterface
@@ -1114,10 +1026,6 @@ jalv_init_display(Jalv* const jalv)
 int
 jalv_open(Jalv* const jalv, int* argc, char*** argv)
 {
-#if USE_SUIL
-  suil_init(argc, argv, SUIL_ARG_NONE);
-#endif
-
   // Parse command-line arguments
   int ret = 0;
   if ((ret = jalv_frontend_init(argc, argv, &jalv->opts))) {
@@ -1150,12 +1058,6 @@ jalv_open(Jalv* const jalv, int* argc, char*** argv)
   jalv_init_nodes(world, &jalv->nodes);
   jalv_init_features(jalv);
   lv2_atom_forge_init(&jalv->forge, &jalv->map);
-
-  // Set up atom reading and writing environment
-  jalv->sratom = sratom_new(&jalv->map);
-  sratom_set_env(jalv->sratom, jalv->env);
-  jalv->ui_sratom = sratom_new(&jalv->map);
-  sratom_set_env(jalv->ui_sratom, jalv->env);
 
   // Create temporary directory for plugin state
 #ifdef _WIN32
@@ -1257,20 +1159,6 @@ jalv_open(Jalv* const jalv, int* argc, char*** argv)
   jalv->uis = lilv_plugin_get_uis(jalv->plugin);
   if (!jalv->opts.generic_ui) {
     if ((jalv->ui = jalv_select_custom_ui(jalv))) {
-#if USE_SUIL
-      const char* host_type_uri = jalv_frontend_ui_type();
-      if (host_type_uri) {
-        LilvNode* host_type = lilv_new_uri(jalv->world, host_type_uri);
-
-        if (!lilv_ui_is_supported(
-              jalv->ui, suil_ui_supported, host_type, &jalv->ui_type)) {
-          jalv->ui = NULL;
-        }
-
-        lilv_node_free(host_type);
-      }
-#endif
-
       if (jalv->ui) {
         jalv_log(JALV_LOG_INFO,
                  "UI:           %s\n",
@@ -1435,9 +1323,6 @@ jalv_close(Jalv* const jalv)
   jalv_worker_free(jalv->state_worker);
 
   // Deactivate plugin
-#if USE_SUIL
-  suil_instance_free(jalv->ui_instance);
-#endif
   if (jalv->instance) {
     lilv_instance_deactivate(jalv->instance);
     lilv_instance_free(jalv->instance);
@@ -1452,9 +1337,6 @@ jalv_close(Jalv* const jalv)
   }
   symap_free(jalv->symap);
   zix_sem_destroy(&jalv->symap_lock);
-#if USE_SUIL
-  suil_host_free(jalv->ui_host);
-#endif
 
   for (unsigned i = 0; i < jalv->controls.n_controls; ++i) {
     ControlID* const control = jalv->controls.controls[i];
@@ -1469,8 +1351,6 @@ jalv_close(Jalv* const jalv)
   }
   free(jalv->controls.controls);
 
-  sratom_free(jalv->sratom);
-  sratom_free(jalv->ui_sratom);
   serd_env_free(jalv->env);
   lilv_uis_free(jalv->uis);
   lilv_world_free(jalv->world);

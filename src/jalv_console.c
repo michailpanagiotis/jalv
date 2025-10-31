@@ -16,10 +16,6 @@
 #include "zix/common.h"
 #include "zix/sem.h"
 
-#if USE_SUIL
-#  include "suil/suil.h"
-#endif
-
 #ifdef _WIN32
 #  include <synchapi.h>
 #else
@@ -42,7 +38,6 @@ print_usage(const char* name, bool error)
           "Run an LV2 plugin as a Jack application.\n"
           "  -b SIZE      Buffer size for plugin <=> UI communication\n"
           "  -c SYM=VAL   Set control value (e.g. \"vol=1.4\")\n"
-          "  -d           Dump plugin <=> UI communication\n"
           "  -h           Display this help and exit\n"
           "  -i           Ignore keyboard input, run non-interactively\n"
           "  -l DIR       Load state from save directory\n"
@@ -74,18 +69,11 @@ jalv_ui_port_event(Jalv*       jalv,
                    uint32_t    protocol,
                    const void* buffer)
 {
-#if USE_SUIL
-  if (jalv->ui_instance) {
-    suil_instance_port_event(
-      jalv->ui_instance, port_index, buffer_size, protocol, buffer);
-  }
-#else
   (void)jalv;
   (void)port_index;
   (void)buffer_size;
   (void)protocol;
   (void)buffer;
-#endif
 }
 
 int
@@ -135,8 +123,6 @@ jalv_frontend_init(int* argc, char*** argv, JalvOptions* opts)
       opts->controls[n_controls]     = NULL;
     } else if ((*argv)[a][1] == 'i') {
       opts->non_interactive = true;
-    } else if ((*argv)[a][1] == 'd') {
-      opts->dump = true;
     } else if ((*argv)[a][1] == 't') {
       opts->trace = true;
     } else if ((*argv)[a][1] == 'n') {
@@ -403,40 +389,7 @@ jalv_frontend_discover(Jalv* jalv)
 static bool
 jalv_run_custom_ui(Jalv* jalv)
 {
-#if USE_SUIL
-  const LV2UI_Idle_Interface* idle_iface = NULL;
-  const LV2UI_Show_Interface* show_iface = NULL;
-  if (jalv->ui && jalv->opts.show_ui) {
-    jalv_ui_instantiate(jalv, jalv_frontend_ui_type(), NULL);
-    idle_iface = (const LV2UI_Idle_Interface*)suil_instance_extension_data(
-      jalv->ui_instance, LV2_UI__idleInterface);
-    show_iface = (const LV2UI_Show_Interface*)suil_instance_extension_data(
-      jalv->ui_instance, LV2_UI__showInterface);
-  }
-
-  if (show_iface && idle_iface) {
-    show_iface->show(suil_instance_get_handle(jalv->ui_instance));
-
-    // Drive idle interface until interrupted
-    while (!zix_sem_try_wait(&jalv->done)) {
-      jalv_update(jalv);
-      if (idle_iface->idle(suil_instance_get_handle(jalv->ui_instance))) {
-        break;
-      }
-
-#  ifdef _WIN32
-      Sleep(33);
-#  else
-      usleep(33333);
-#  endif
-    }
-
-    show_iface->hide(suil_instance_get_handle(jalv->ui_instance));
-    return true;
-  }
-#else
   (void)jalv;
-#endif
 
   return false;
 }

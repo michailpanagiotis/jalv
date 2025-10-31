@@ -1,7 +1,7 @@
 # Copyright 2020-2022 David Robillard <d@drobilla.net>
 # SPDX-License-Identifier: 0BSD OR ISC
 
-project('jalv', ['c', 'cpp'],
+project('jalv', ['c'],
         version: '1.6.8',
         license: 'ISC',
         meson_version: '>= 0.56.0',
@@ -9,7 +9,6 @@ project('jalv', ['c', 'cpp'],
           'b_ndebug=if-release',
           'buildtype=release',
           'c_std=c99',
-          'cpp_std=c++14',
         ])
 
 jalv_src_root = meson.current_source_dir()
@@ -23,11 +22,6 @@ version_suffix = '@0@-@1@'.format(meson.project_name(), major_version)
 # Required tools
 cc = meson.get_compiler('c')
 
-# Optional C++ support
-if add_languages(['cpp'], native: false, required: get_option('cxx'))
-  cpp = meson.get_compiler('cpp')
-endif
-
 # Set global warning flags
 if get_option('strict') and not meson.is_subproject()
   subdir('meson/warnings')
@@ -36,9 +30,6 @@ endif
 # Set global warning suppressions
 subdir('meson/suppressions')
 add_project_arguments(c_suppressions, language: ['c'])
-if is_variable('cpp')
-  add_project_arguments(cpp_suppressions, language: ['cpp'])
-endif
 
 #######################
 # Common Dependencies #
@@ -52,10 +43,6 @@ serd_dep = dependency('serd-0',
                       version: '>= 0.30.0',
                       fallback: ['serd', 'serd_dep'])
 
-sord_dep = dependency('sord-0',
-                      version: '>= 0.14.0',
-                      fallback: ['sord', 'sord_dep'])
-
 lv2_dep = dependency('lv2',
                      version: '>= 1.18.0',
                      fallback: ['lv2', 'lv2_dep'])
@@ -64,49 +51,17 @@ lilv_dep = dependency('lilv-0',
                       version: '>= 0.24.0',
                       fallback: ['lilv', 'lilv_dep'])
 
-sratom_dep = dependency('sratom-0',
-                        version: '>= 0.6.4',
-                        fallback: ['sratom', 'sratom_dep'])
-
-suil_dep = dependency('suil-0',
-                      version: '>= 0.10.0',
-                      fallback: ['suil', 'suil_dep'],
-                      required: get_option('suil'))
-
 ###########
 # Drivers #
 ###########
 
-portaudio_dep = dependency('portaudio-2.0',
-                           version: '>= 2.0.0',
-                           include_type: 'system',
-                           required: get_option('portaudio'))
-
 jack_dep = dependency('jack',
                       version: '>= 0.120.0',
                       include_type: 'system',
-                      required: get_option('jack'))
+                      required: true)
 
-backend_sources = files()
-if get_option('jack').enabled() and get_option('portaudio').enabled()
-  error('Only one of jack and portaudio can be enabled')
-elif get_option('jack').enabled()
-  backend_dep = jack_dep
-  backend_sources += files('src/jack.c')
-elif get_option('portaudio').enabled()
-  backend_dep = portaudio_dep
-  backend_sources += files('src/portaudio.c')
-elif jack_dep.found()
-  backend_dep = jack_dep
-  backend_sources += files('src/jack.c')
-else
-  backend_dep = portaudio_dep
-  backend_sources += files('src/portaudio.c')
-endif
-
-if not backend_dep.found()
-  error('No backend found, either jack or portaudio is required')
-endif
+backend_sources = files('src/jack.c')
+backend_dep = jack_dep
 
 ##########################
 # Platform Configuration #
@@ -116,8 +71,6 @@ platform_defines = [
   '-DJALV_VERSION="@0@"'.format(meson.project_version()),
   '-DZIX_STATIC',
 ]
-
-suil_defines = ['-DHAVE_SUIL=@0@'.format(suil_dep.found().to_int())]
 
 # Determine whether to use POSIX
 no_posix = get_option('posix').disabled() or host_machine.system() == 'windows'
@@ -230,8 +183,6 @@ common_dependencies = [
   lilv_dep,
   m_dep,
   serd_dep,
-  sratom_dep,
-  suil_dep,
   thread_dep,
 ]
 
@@ -240,7 +191,7 @@ if jack_dep.found()
   shared_library(
     'jalv',
     sources + files('src/jalv_console.c'),
-    c_args: c_suppressions + platform_defines + ['-DHAVE_SUIL=0'],
+    c_args: c_suppressions + platform_defines,
     dependencies: common_dependencies,
     include_directories: include_directories('src'),
     install: true,
@@ -253,105 +204,12 @@ endif
 executable(
   'jalv',
   sources + files('src/jalv_console.c'),
-  c_args: c_suppressions + platform_defines + suil_defines,
-  dependencies: common_dependencies + [suil_dep],
+  c_args: c_suppressions + platform_defines,
+  dependencies: common_dependencies,
   include_directories: include_directories('src'),
   install: true,
 )
 
-# Gtk 2.0 GUI version
-if not get_option('gtk2').disabled()
-  gdk2_dep = dependency('gdk-2.0',
-                        version: '>= 2.18.0',
-                        include_type: 'system',
-                        required: get_option('gtk2'))
-
-  gtk2_dep = dependency('gtk+-2.0',
-                        version: '>= 2.18.0',
-                        include_type: 'system',
-                        required: get_option('gtk2'))
-
-  if gdk2_dep.found() and gtk2_dep.found()
-    executable(
-      'jalv.gtk',
-      sources + files('src/jalv_gtk.c'),
-      c_args: c_suppressions + platform_defines + suil_defines,
-      dependencies: common_dependencies + [gdk2_dep, gtk2_dep, suil_dep],
-      include_directories: include_directories('src'),
-      install: true,
-    )
-  endif
-endif
-
-# Gtk 3.0 GUI version
-if not get_option('gtk3').disabled()
-  gdk3_dep = dependency('gdk-3.0',
-                        version: '>= 3.0.0',
-                        include_type: 'system',
-                        required: get_option('gtk3'))
-
-  gtk3_dep = dependency('gtk+-3.0',
-                        version: '>= 3.0.0',
-                        include_type: 'system',
-                        required: get_option('gtk3'))
-
-  if gdk3_dep.found() and gtk3_dep.found()
-    config = configuration_data()
-    config.set('APP_INSTALL_NAME', 'jalv.gtk3')
-    config.set('APP_HUMAN_NAME', 'Jalv')
-    config.set('BINDIR', get_option('prefix') / get_option('bindir'))
-
-    configure_file(configuration: config,
-                   input: files('jalv.desktop.in'),
-                   output: 'jalv.desktop',
-                   install: true,
-                   install_dir: get_option('datadir') / 'applications')
-
-    executable(
-      'jalv.gtk3',
-      sources + files('src/jalv_gtk.c'),
-      c_args: c_suppressions + platform_defines + suil_defines,
-      dependencies: common_dependencies + [gdk3_dep, gtk3_dep, suil_dep],
-      include_directories: include_directories('src'),
-      install: true,
-    )
-  endif
-endif
-
-# Qt 5 GUI version
-if not get_option('qt5').disabled()
-  qt5_dep = dependency('Qt5Widgets',
-                       version: '>= 5.1.0',
-                       include_type: 'system',
-                       required: get_option('qt5'))
-
-  moc = find_program('moc-qt5', required: false)
-  if not moc.found()
-    moc = find_program('moc', required: get_option('qt5'))
-  endif
-
-  if moc.found()
-    jalv_qt_hpp = files(jalv_src_root / 'src' / 'jalv_qt.hpp')
-
-    jalv_qt5_meta_cpp = custom_target(
-      'jalv_qt5_meta.cpp',
-      capture: true,
-      command: [moc, '@INPUT@'],
-      input: jalv_qt_hpp,
-      output: 'jalv_qt5_meta.cpp',
-    )
-
-    executable(
-      'jalv.qt5',
-      sources + files('src/jalv_qt.cpp') + [jalv_qt5_meta_cpp],
-      c_args: c_suppressions + platform_defines + suil_defines,
-      cpp_args: cpp_suppressions + platform_defines + suil_defines,
-      dependencies: common_dependencies + [qt5_dep, suil_dep],
-      include_directories: include_directories('src'),
-      install: true,
-    )
-  endif
-endif
 
 #################
 # Documentation #
